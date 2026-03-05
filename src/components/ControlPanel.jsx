@@ -12,6 +12,10 @@ export default function ControlPanel({
   onLoadSample,
   onLoadFromAPI,
   onFileUpload,
+  onResetView,
+  availableLayers = [],
+  selectedLayer = 'all',
+  onSelectLayer,
 }) {
   const [collapsed, setCollapsed] = useState(false);
 
@@ -69,6 +73,41 @@ export default function ControlPanel({
               >
                 Fetch
               </button>
+            </div>
+          </div>
+
+          {/* View Controls */}
+          <div className="panel-section">
+            <h2>View Controls</h2>
+
+            <div className="control-group">
+              <button
+                className="btn btn-secondary"
+                onClick={() => {
+                  if (onResetView) onResetView();
+                }}
+              >
+                Reset View
+              </button>
+            </div>
+
+            <div className="control-group">
+              <label htmlFor="layer-select">View Layer</label>
+              <select
+                id="layer-select"
+                className="layer-select"
+                value={selectedLayer}
+                onChange={(e) => {
+                  if (onSelectLayer) onSelectLayer(e.target.value);
+                }}
+              >
+                <option value="all">All Layers</option>
+                {availableLayers.map((layer) => (
+                  <option key={layer} value={layer}>
+                    {typeof layer === 'number' ? `Layer ${layer}` : layer}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
 
