@@ -8,8 +8,8 @@ export function useForceConfig() {
     repulsionStrength: -30,
     repulsionMaxDistance: 150,
     showLabels: true,
+    showLinks: false,
     showLayerPlanes: true,
-    showLinks: true,
     showForceField: false,
   });
 

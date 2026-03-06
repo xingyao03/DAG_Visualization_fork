@@ -70,7 +70,6 @@ export function generateSampleData() {
   };
 
   const nodes = [];
-  const links = [];
 
   // Create nodes for each word in each time slice
   for (const [word, frequencies] of Object.entries(wordData)) {
@@ -96,25 +95,9 @@ export function generateSampleData() {
     }
   }
 
-  // Create edges connecting the same word across adjacent time slices
-  for (const [word, frequencies] of Object.entries(wordData)) {
-    for (let t = 0; t < timeSlices.length - 1; t++) {
-      const currentFreq = frequencies[t];
-      const nextFreq = frequencies[t + 1];
-      if (currentFreq > 0 && nextFreq > 0) {
-        links.push({
-          source: `${word}_${t}`,
-          target: `${word}_${t + 1}`,
-          // Edge weight based on average frequency
-          value: (currentFreq + nextFreq) / 2,
-        });
-      }
-    }
-  }
-
   return {
     nodes,
-    links,
+    links: [],
     layers: timeSlices,
   };
 }

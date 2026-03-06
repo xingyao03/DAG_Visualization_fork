@@ -2,7 +2,6 @@ import { useState, useCallback } from 'react';
 import GraphView from './components/GraphView';
 import ControlPanel from './components/ControlPanel';
 import NodeInfo from './components/NodeInfo';
-import StatusBar from './components/StatusBar';
 import { useForceConfig } from './hooks/useForceConfig';
 import { generateSampleData, parseGraphData, fetchGraphData } from './data/sampleData';
 
@@ -72,9 +71,6 @@ export default function App() {
 
         {/* Selected node info overlay */}
         <NodeInfo node={selectedNode} />
-
-        {/* Stats bar */}
-        <StatusBar graphData={graphData} />
 
         {/* Error banner */}
         {error && (
