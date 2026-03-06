@@ -83,13 +83,14 @@ export default function App() {
     <div className="app-container">
       {/* 3D Graph Viewport */}
       <div className="graph-container">
-        <GraphView
-          graphData={graphData}
-          config={config}
-          onNodeSelect={setSelectedNode}
-          selectedLayer={selectedLayer}
-          resetViewTrigger={resetViewTrigger}
-        />
+      <GraphView
+        graphData={graphData}
+        config={config}
+        onNodeSelect={setSelectedNode}
+        selectedNode={selectedNode}
+        selectedLayer={selectedLayer}
+        resetViewTrigger={resetViewTrigger}
+      />
 
         {/* Selected node info overlay */}
         <NodeInfo node={selectedNode} />

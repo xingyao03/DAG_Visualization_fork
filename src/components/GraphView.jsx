@@ -17,6 +17,7 @@ export default function GraphView({
   graphData,
   config,
   onNodeSelect,
+  selectedNode,
   selectedLayer = 'all',
   resetViewTrigger,
 }) {
@@ -69,45 +70,72 @@ export default function GraphView({
       .nodeVal((node) => {
         const base = 100;
         const w = node.weight || 10;
-        return base + w * w;
+        const isSelected = selectedNode && selectedNode.id === node.id;
+        const value = base + w * w;
+        return isSelected ? value * 1.35 : value;
       })
-      .nodeColor((node) => node.color || '#3b82f6')
+      .nodeColor((node) => {
+        const isSelected = selectedNode && selectedNode.id === node.id;
+        const hasSelection = !!selectedNode;
+      
+        if (isSelected) return '#ffffff';
+        if (hasSelection) return node.color || '#4b5563';
+        return node.color || '#3b82f6';
+      })
       .nodeOpacity(0.85)
       .nodeThreeObjectExtend(true)
       .nodeThreeObject((node) => {
         const cfg = configRef.current;
         const showLabel = cfg.showLabels;
         const showField = cfg.showForceField;
-        if (!showLabel && !showField) return false;
-
+        const isSelected = selectedNode && selectedNode.id === node.id;
+      
+        if (!showLabel && !showField && !isSelected) return false;
+      
         const group = new THREE.Group();
         const approxRadius = 0.3 * Math.cbrt(100 + Math.pow(node.weight || 10, 2));
-
-        if (showLabel) {
+      
+        if (showLabel || isSelected) {
           const sprite = new SpriteText(node.label || node.id);
-          sprite.color = '#e2e8f0';
-          sprite.textHeight = Math.max(2.5, approxRadius * 0.6);
-          sprite.position.y = approxRadius + 3;
+          sprite.color = isSelected ? '#ffffff' : '#e2e8f0';
+          sprite.textHeight = isSelected
+            ? Math.max(4, approxRadius * 0.9)
+            : Math.max(2.5, approxRadius * 0.6);
+          sprite.position.y = approxRadius + (isSelected ? 6 : 3);
           sprite.fontFace = 'DM Sans, sans-serif';
-          sprite.backgroundColor = 'rgba(15, 23, 42, 0.7)';
-          sprite.padding = 1.5;
+          sprite.backgroundColor = isSelected
+            ? 'rgba(15, 23, 42, 0.9)'
+            : 'rgba(15, 23, 42, 0.7)';
+          sprite.padding = isSelected ? 2.5 : 1.5;
           sprite.borderRadius = 3;
           group.add(sprite);
         }
-
+      
         if (showField) {
           const fieldRadius = cfg.repulsionMaxDistance;
           const geometry = new THREE.CircleGeometry(fieldRadius, 48);
           const material = new THREE.MeshBasicMaterial({
             color: node.color || '#3b82f6',
             transparent: true,
-            opacity: 0.05,
+            opacity: isSelected ? 0.1 : 0.05,
             depthWrite: false,
             side: THREE.DoubleSide,
           });
           group.add(new THREE.Mesh(geometry, material));
         }
-
+      
+        if (isSelected) {
+          const ringGeometry = new THREE.SphereGeometry(approxRadius * 1.35, 24, 24);
+          const ringMaterial = new THREE.MeshBasicMaterial({
+            color: '#ffffff',
+            transparent: true,
+            opacity: 0.18,
+            wireframe: true,
+          });
+          const ring = new THREE.Mesh(ringGeometry, ringMaterial);
+          group.add(ring);
+        }
+      
         return group;
       })
       .linkColor((link) => {
@@ -122,13 +150,18 @@ export default function GraphView({
       .linkWidth((link) => Math.max(0.5, (link.value || 1) / 30))
       .onNodeClick((node) => {
         if (onNodeSelect) onNodeSelect(node);
-
-        const distance = 200;
-        const distRatio = 1 + distance / Math.hypot(node.x, node.y, node.z);
+      
+        const distance = 260;
+        const distRatio = 1 + distance / Math.max(1, Math.hypot(node.x, node.y, node.z));
+      
         graph.cameraPosition(
-          { x: node.x * distRatio, y: node.y * distRatio, z: node.z * distRatio },
-          node,
-          1000
+          {
+            x: node.x * distRatio,
+            y: node.y * distRatio + 30,
+            z: node.z * distRatio + 40,
+          },
+          { x: node.x, y: node.y, z: node.z },
+          900
         );
       })
       .onNodeDrag((node) => {
