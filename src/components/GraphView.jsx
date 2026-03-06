@@ -5,6 +5,7 @@ import SpriteText from 'three-spritetext';
 
 import { forceWithinLayerRepulsion } from '../utils/forces';
 import { getLayerColor } from '../data/sampleData';
+import { createHologramNode } from './HologramNode';
 
 /**
  * GraphView Component
@@ -28,33 +29,21 @@ export default function GraphView({ graphData, config, onNodeSelect }) {
     const graph = ForceGraph3D()(containerRef.current)
       .backgroundColor('#0a0e17')
       .showNavInfo(false)
-      // --- Node rendering ---
-      // nodeVal drives sphere volume via the built-in renderer (radius = nodeRelSize × ∛nodeVal).
-      // Using weight² gives radius ∝ weight^(2/3) for a clear word-cloud size spread.
-      .nodeRelSize(0.3)
-      .nodeVal((node) => {
-        const base = 100;
-        const w = node.weight || 10;
-        return base + w * w;
-      })
-      .nodeColor((node) => node.color || '#3b82f6')
-      .nodeOpacity(0.85)
-      // Extend mode: add label sprite on top of the built-in sphere instead of replacing it
-      .nodeThreeObjectExtend(true)
+      // --- Node rendering (fully custom hologram) ---
+      .nodeThreeObjectExtend(false)
       .nodeThreeObject((node) => {
         const cfg = configRef.current;
-        const showLabel = cfg.showLabels;
-        const showField = cfg.showForceField;
-        if (!showLabel && !showField) return false;
+        const group = createHologramNode(node);
 
-        const group = new THREE.Group();
-        const approxRadius = 0.3 * Math.cbrt(100 + Math.pow(node.weight || 10, 2));
+        // Scale factor matching HologramNode.js (widest trail = 8.5 * s)
+        const s = 0.5 + (node.weight || 10) / 50;
+        const outerRadius = 8.5 * s;
 
-        if (showLabel) {
+        if (cfg.showLabels) {
           const sprite = new SpriteText(node.label || node.id);
           sprite.color = '#e2e8f0';
-          sprite.textHeight = Math.max(2.5, approxRadius * 0.6);
-          sprite.position.y = approxRadius + 3;
+          sprite.textHeight = Math.max(2.5, outerRadius * 0.25);
+          sprite.position.y = outerRadius + 3;
           sprite.fontFace = 'DM Sans, sans-serif';
           sprite.backgroundColor = 'rgba(15, 23, 42, 0.7)';
           sprite.padding = 1.5;
@@ -62,7 +51,7 @@ export default function GraphView({ graphData, config, onNodeSelect }) {
           group.add(sprite);
         }
 
-        if (showField) {
+        if (cfg.showForceField) {
           const fieldRadius = cfg.repulsionMaxDistance;
           const geometry = new THREE.CircleGeometry(fieldRadius, 48);
           const material = new THREE.MeshBasicMaterial({
