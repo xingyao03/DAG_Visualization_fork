@@ -18,21 +18,25 @@
 //   • Inverse-linear (1/d) falloff — softer than Coulomb
 //   • Heavier nodes (higher word frequency) push harder
 // ─────────────────────────────────────────────────────────────────────────────
-export function forceWithinLayerRepulsion(strength = 100, maxDistance = 200) {
+export function forceWithinLayerRepulsion(strength = 200, maxDistance = 500) {
   let nodes;
   let _strength = strength;
   let _maxDistance = maxDistance;
-  const EPSILON = 0.1; // minimum distance clamp
+  const EPSILON = 1.0; // minimum distance clamp
 
   // Pre-built index: layer → [node, node, …]
   let layerIndex = new Map();
+  // Global max weight for normalization (so w_i * w_j stays in [0, 1])
+  let maxWeight = 1;
 
   function rebuildIndex() {
     layerIndex = new Map();
+    maxWeight = 1;
     for (const node of nodes) {
       const layer = node.layer;
       if (!layerIndex.has(layer)) layerIndex.set(layer, []);
       layerIndex.get(layer).push(node);
+      if ((node.weight || 1) > maxWeight) maxWeight = node.weight;
     }
   }
 
@@ -52,8 +56,8 @@ export function forceWithinLayerRepulsion(strength = 100, maxDistance = 200) {
           // Clamp to avoid singularity
           if (dist < EPSILON) {
             // Give a random nudge so overlapping nodes separate
-            dx = (Math.random() - 0.5) * 0.1;
-            dy = (Math.random() - 0.5) * 0.1;
+            dx = (Math.random() - 0.5) * 2;
+            dy = (Math.random() - 0.5) * 2;
             dist = Math.sqrt(dx * dx + dy * dy);
           }
           const distEff = Math.max(dist, EPSILON);
@@ -61,10 +65,13 @@ export function forceWithinLayerRepulsion(strength = 100, maxDistance = 200) {
           // Skip if beyond max influence range
           if (distEff > _maxDistance) continue;
 
-          // Inverse-linear repulsion scaled by both weights
-          const wa = a.weight || 1;
-          const wb = b.weight || 1;
-          const magnitude = (_strength * wa * wb) / (distEff * distEff) * alpha;
+          // Normalize weights to [0, 1] so the product stays bounded
+          const wa = (a.weight || 1) / maxWeight;
+          const wb = (b.weight || 1) / maxWeight;
+
+          // Inverse-linear repulsion: F = k * wa * wb / d
+          // wa*wb ∈ [0,1] keeps magnitude predictable
+          const magnitude = (_strength * wa * wb) / distEff * alpha;
 
           // Unit vector from b → a
           const ux = dx / dist;
@@ -101,18 +108,17 @@ export function forceWithinLayerRepulsion(strength = 100, maxDistance = 200) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 2. Cross-Layer Spring Force (Hooke's law with positive rest length)
+// 2. Cross-Layer Spring Force (Hooke's law with per-link rest length)
 //
-//   F_spring(i,j) = -k_spring * (|Δ_xy| - r0) * Δ̂_xy
+//   F_spring(i,j) = -k_spring * value * (|Δ_xy| - r0_ij) * Δ̂_xy
 //
 //   • Acts along edges that connect nodes across different layers
 //   • Only the x-y displacement matters (z is locked to layer planes)
-//   • Rest length r0 > 0: spring is relaxed when x-y offset equals r0
-//     – |Δ_xy| > r0  →  attractive (pull closer)
-//     – |Δ_xy| < r0  →  repulsive  (push apart)
-//     – |Δ_xy| = r0  →  zero force
+//   • Each link carries its own rest length (scaled by layer gap) and
+//     a random magnitude multiplier (value)
+//   • r0_ij comes from link.restLength; falls back to global _restLength
 // ─────────────────────────────────────────────────────────────────────────────
-export function forceCrossLayerSpring(links, strength = 0.05, restLength = 5) {
+export function forceCrossLayerSpring(links, strength = 0.08, restLength = 15) {
   let nodes;
   let _links = links;
   let _strength = strength;
@@ -130,24 +136,31 @@ export function forceCrossLayerSpring(links, strength = 0.05, restLength = 5) {
     for (const link of _links) {
       const src = typeof link.source === 'object' ? link.source : nodeById.get(link.source);
       const tgt = typeof link.target === 'object' ? link.target : nodeById.get(link.target);
-      if (src && tgt) resolvedLinks.push({ source: src, target: tgt });
+      if (src && tgt) {
+        resolvedLinks.push({
+          source: src,
+          target: tgt,
+          value: link.value || 1,
+          // Per-link rest length (from layer-gap scaling); fall back to global
+          restLength: link.restLength || _restLength,
+        });
+      }
     }
   }
 
   function force(alpha) {
-    for (const { source, target } of resolvedLinks) {
+    for (const { source, target, value, restLength: r0 } of resolvedLinks) {
       // x-y displacement only (ignore z / layer separation)
       const dx = source.x - target.x;
       const dy = source.y - target.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
 
-      // When nodes are nearly coincident, skip (rest length push will be
-      // handled by repulsion if they share a layer, or is negligible across layers)
+      // When nodes are nearly coincident, skip
       if (dist < 0.01) continue;
 
-      // Hooke's law: positive = stretched beyond rest → attract; negative = compressed → repel
-      const displacement = dist - _restLength;
-      const magnitude = _strength * displacement * alpha;
+      // Hooke's law with per-link rest length and magnitude
+      const displacement = dist - r0;
+      const magnitude = _strength * value * displacement * alpha;
 
       // Unit vector from target → source
       const ux = dx / dist;

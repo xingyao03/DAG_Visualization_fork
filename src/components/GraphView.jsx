@@ -7,26 +7,6 @@ import { forceWithinLayerRepulsion, forceCrossLayerSpring } from '../utils/force
 import { getLayerColor } from '../data/sampleData';
 import { createHologramNode } from './HologramNode';
 
-/** Warp a PlaneGeometry's Z vertices using IDW from nearby nodes' _zDisplacement. */
-function warpPlaneIDW(geometry, layerNodes, epsilon) {
-  const posAttr = geometry.getAttribute('position');
-  for (let v = 0; v < posAttr.count; v++) {
-    const vx = posAttr.getX(v);
-    const vy = posAttr.getY(v);
-    let weightSum = 0;
-    let displacementSum = 0;
-    for (const node of layerNodes) {
-      const dx = vx - (node.x || 0);
-      const dy = vy - (node.y || 0);
-      const w = 1 / (dx * dx + dy * dy + epsilon);
-      weightSum += w;
-      displacementSum += w * (node._zDisplacement || 0);
-    }
-    posAttr.setZ(v, displacementSum / weightSum);
-  }
-  posAttr.needsUpdate = true;
-}
-
 /**
  * GraphView Component
  *
@@ -102,20 +82,22 @@ export default function GraphView({ graphData, config, onNodeSelect }) {
         );
       })
       .onNodeDrag((node) => {
-        // During drag: pin x/y to mouse position, keep z locked to layer
-        if (node.layer !== undefined) {
-          const targetZ = node.layer * layerSpacing + (node._zDisplacement || 0);
-          node.z = targetZ;
-          node.fz = targetZ;
+        // During drag: pin x/y to mouse position, keep z strictly on layer
+        if (node._layerZ !== undefined) {
+          node.z = node._layerZ;
+          node.fz = node._layerZ;
+          node.vz = 0;
         }
       })
       .onNodeDragEnd((node) => {
         // Release x/y pins so the simulation can take over again
         node.fx = undefined;
         node.fy = undefined;
-        // Keep z locked
-        if (node.layer !== undefined) {
-          node.fz = node.layer * layerSpacing + (node._zDisplacement || 0);
+        // Keep z strictly locked
+        if (node._layerZ !== undefined) {
+          node.z = node._layerZ;
+          node.fz = node._layerZ;
+          node.vz = 0;
         }
         graph.d3ReheatSimulation();
       })
@@ -154,52 +136,16 @@ export default function GraphView({ graphData, config, onNodeSelect }) {
       if (!nodesByLayer[node.layer]) nodesByLayer[node.layer] = [];
       nodesByLayer[node.layer].push(node);
     }
-    const sortedLayers = Object.keys(nodesByLayer).map(Number).sort((a, b) => a - b);
 
-    // ── Compute Z-displacement from link forces (visual depth variation) ──
-    // Build fully-connected pairs for Z displacement and visual link lines
-    const linkPairs = [];
-    const linkForces = [];
-    for (let i = 0; i < sortedLayers.length - 1; i++) {
-      const curr = nodesByLayer[sortedLayers[i]];
-      const next = nodesByLayer[sortedLayers[i + 1]];
-      for (const src of curr) {
-        for (const tgt of next) {
-          linkPairs.push(src, tgt);
-          linkForces.push({
-            magnitude: Math.random(),
-            direction: Math.random() < 0.5 ? 1 : -1,
-          });
-        }
-      }
-    }
-
-    const zForceMap = new Map();
-    for (const node of graphData.nodes) zForceMap.set(node.id, 0);
-    for (let i = 0; i < linkForces.length; i++) {
-      const src = linkPairs[i * 2];
-      const tgt = linkPairs[i * 2 + 1];
-      const f = linkForces[i].direction * linkForces[i].magnitude;
-      zForceMap.set(src.id, zForceMap.get(src.id) + f);
-      zForceMap.set(tgt.id, zForceMap.get(tgt.id) - f);
-    }
-
-    const maxDisplacement = layerSpacing / 2;
-    let maxAbsForce = 0;
-    for (const force of zForceMap.values()) {
-      maxAbsForce = Math.max(maxAbsForce, Math.abs(force));
-    }
-    const scaleFactor = maxAbsForce > 0 ? maxDisplacement / maxAbsForce : 0;
-
-    // ── Position nodes: random x/y (FREE), z locked to layer ──
+    // ── Position nodes: random x/y (FREE), z strictly locked to layer ──
     for (const node of graphData.nodes) {
-      const baseZ = (node.layer !== undefined ? node.layer : 0) * layerSpacing;
-      const displacement = (zForceMap.get(node.id) || 0) * scaleFactor;
-      node._zDisplacement = displacement;
+      const exactZ = (node.layer !== undefined ? node.layer : 0) * layerSpacing;
 
-      // Z is pinned to layer plane (forces only act on x/y)
-      node.z = baseZ + displacement;
-      node.fz = node.z;
+      // Z is STRICTLY pinned to layer plane — no displacement
+      node.z = exactZ;
+      node.fz = exactZ;
+      node.vz = 0;
+      node._layerZ = exactZ; // stash for hard reset each tick
 
       // x/y are FREE — the simulation will move them via repulsion + springs
       if (node.x === undefined) node.x = (Math.random() - 0.5) * 200;
@@ -207,16 +153,33 @@ export default function GraphView({ graphData, config, onNodeSelect }) {
       // Do NOT set fx/fy — leave them free for the force simulation
     }
 
+    // ── Build link pairs from actual graph links for visual lines ──
+    // We need node references resolved by id for drawing lines.
+    // At this point nodes have positions but graphData hasn't been fed to the
+    // graph yet (which would mutate link.source/target to objects), so we
+    // resolve manually from our own node array.
+    const nodeById = new Map();
+    for (const node of graphData.nodes) nodeById.set(node.id, node);
+
+    const linkPairs = []; // flat array: [srcNode, tgtNode, srcNode, tgtNode, …]
+    for (const link of graphData.links) {
+      const src = typeof link.source === 'object' ? link.source : nodeById.get(link.source);
+      const tgt = typeof link.target === 'object' ? link.target : nodeById.get(link.target);
+      if (src && tgt) {
+        linkPairs.push(src, tgt);
+      }
+    }
+    const totalSegments = linkPairs.length / 2;
+
     // ── Feed data to the graph (simulation begins) ──
     graph.graphData(graphData);
 
-    // ── Add deformed layer plane meshes (Perspective Wall) ──
+    // ── Add flat layer plane meshes ──
     const layerPlanesGroup = new THREE.Group();
     const layerMeta = [];
     const uniqueLayers = [...new Set(graphData.nodes.map(n => n.layer))].sort((a, b) => a - b);
-    const planeSegments = 32;
     for (const layerIdx of uniqueLayers) {
-      const geometry = new THREE.PlaneGeometry(400, 400, planeSegments, planeSegments);
+      const geometry = new THREE.PlaneGeometry(400, 400);
       const material = new THREE.MeshBasicMaterial({
         color: getLayerColor(layerIdx),
         transparent: true,
@@ -225,23 +188,17 @@ export default function GraphView({ graphData, config, onNodeSelect }) {
         side: THREE.DoubleSide,
       });
 
-      const layerNodes = nodesByLayer[layerIdx] || [];
-      if (layerNodes.length > 0) {
-        warpPlaneIDW(geometry, layerNodes, 100);
-      }
-
       const mesh = new THREE.Mesh(geometry, material);
       mesh.position.z = layerIdx * layerSpacing;
       layerPlanesGroup.add(mesh);
-      layerMeta.push({ geometry, nodes: layerNodes });
+      layerMeta.push({ geometry, nodes: nodesByLayer[layerIdx] || [] });
     }
     layerPlanesGroup.visible = config.showLayerPlanes;
     graph.scene().add(layerPlanesGroup);
     layerPlanesRef.current = { group: layerPlanesGroup, layers: layerMeta };
 
-    // ── Build THREE.LineSegments for visual links ──
-    const totalSegments = linkForces.length;
-    const positions = new Float32Array(totalSegments * 6);
+    // ── Build THREE.LineSegments for actual spring links ──
+    const positions = new Float32Array(totalSegments * 6); // 2 vertices × 3 components
     const lineGeometry = new THREE.BufferGeometry();
     lineGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
 
@@ -267,6 +224,16 @@ export default function GraphView({ graphData, config, onNodeSelect }) {
 
     // ── Update visuals each tick ──
     graph.onEngineTick(() => {
+      // HARD Z-LOCK: force every node back to its exact layer z every tick.
+      // This is belt-and-suspenders on top of fz — it catches any floating
+      // point drift or vz leakage from the d3-force integration step.
+      for (const node of graphData.nodes) {
+        if (node._layerZ !== undefined) {
+          node.z = node._layerZ;
+          node.vz = 0;
+        }
+      }
+
       // Update link line positions
       if (linksRef.current) {
         const attr = linksRef.current.lineGeometry.getAttribute('position');
@@ -276,15 +243,6 @@ export default function GraphView({ graphData, config, onNodeSelect }) {
           attr.setXYZ(i, n.x, n.y, n.z);
         }
         attr.needsUpdate = true;
-      }
-
-      // Re-warp layer planes to follow node movement
-      if (layerPlanesRef.current?.layers) {
-        for (const { geometry, nodes } of layerPlanesRef.current.layers) {
-          if (nodes.length > 0) {
-            warpPlaneIDW(geometry, nodes, 100);
-          }
-        }
       }
     });
 
