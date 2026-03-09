@@ -27,6 +27,33 @@ export function getLayerColor(layerIndex) {
  * 
  * @returns {{ nodes: Array, links: Array, layers: Array }}
  */
+/**
+ * Generate random cross-layer links between nodes.
+ * Each node gets 1-4 connections to nodes in different layers.
+ */
+function generateRandomLinks(nodes) {
+  const seen = new Set();
+  const links = [];
+
+  for (const node of nodes) {
+    const others = nodes.filter(n => n.layer !== node.layer);
+    const count = Math.floor(Math.random() * 4) + 1;
+    for (let i = 0; i < count && others.length > 0; i++) {
+      const target = others[Math.floor(Math.random() * others.length)];
+      const key = [node.id, target.id].sort().join('--');
+      if (seen.has(key)) continue;
+      seen.add(key);
+      links.push({
+        source: node.id,
+        target: target.id,
+        value: 0.2 + Math.random() * 0.8,
+      });
+    }
+  }
+
+  return links;
+}
+
 export function generateSampleData() {
   const timeSlices = [
     { label: 'Jan 2025', index: 0 },
@@ -97,7 +124,7 @@ export function generateSampleData() {
 
   return {
     nodes,
-    links: [],
+    links: generateRandomLinks(nodes),
     layers: timeSlices,
   };
 }

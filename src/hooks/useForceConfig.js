@@ -5,12 +5,12 @@ import { useState, useCallback } from 'react';
  */
 export function useForceConfig() {
   const [config, setConfig] = useState({
-    repulsionStrength: -30,
-    repulsionMaxDistance: 150,
     showLabels: true,
-    showLinks: false,
+    showLinks: true,
     showLayerPlanes: true,
-    showForceField: false,
+    repulsionStrength: -300,
+    springStrength: 0.02,
+    springDistance: 150,
   });
 
   const updateConfig = useCallback((key, value) => {

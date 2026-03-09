@@ -95,16 +95,6 @@ export default function ControlPanel({
                 <span>Show Layers</span>
               </label>
             </div>
-            <div className="toggle-control">
-              <label>
-                <input
-                  type="checkbox"
-                  checked={config.showForceField}
-                  onChange={(e) => updateConfig('showForceField', e.target.checked)}
-                />
-                <span>Show Force Field</span>
-              </label>
-            </div>
           </div>
         </>
       )}
