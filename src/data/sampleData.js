@@ -27,33 +27,6 @@ export function getLayerColor(layerIndex) {
  * 
  * @returns {{ nodes: Array, links: Array, layers: Array }}
  */
-/**
- * Generate random cross-layer links between nodes.
- * Each node gets 1-4 connections to nodes in different layers.
- */
-function generateRandomLinks(nodes) {
-  const seen = new Set();
-  const links = [];
-
-  for (const node of nodes) {
-    const others = nodes.filter(n => n.layer !== node.layer);
-    const count = Math.floor(Math.random() * 4) + 1;
-    for (let i = 0; i < count && others.length > 0; i++) {
-      const target = others[Math.floor(Math.random() * others.length)];
-      const key = [node.id, target.id].sort().join('--');
-      if (seen.has(key)) continue;
-      seen.add(key);
-      links.push({
-        source: node.id,
-        target: target.id,
-        value: 0.2 + Math.random() * 0.8,
-      });
-    }
-  }
-
-  return links;
-}
-
 export function generateSampleData() {
   const timeSlices = [
     { label: 'Jan 2025', index: 0 },
@@ -64,15 +37,13 @@ export function generateSampleData() {
   ];
 
   // Words with their frequencies per time slice.
-  // Values are intentionally spread across a wide range to create a clear
-  // word-cloud effect: dominant words (100-170) vs niche words (5-30).
   const wordData = {
     // Dominant throughout
     'AI':           [120, 140, 158, 155, 170],
     'data':         [110, 105, 108, 100,  95],
     'model':        [ 90,  95, 108, 115, 120],
 
-    // Rising stars — small early, huge by May
+    // Rising stars
     'agent':        [  8,  22,  50,  95, 145],
     'transformer':  [ 30,  52,  80, 108, 125],
     'safety':       [ 12,  28,  58,  85, 110],
@@ -97,6 +68,7 @@ export function generateSampleData() {
   };
 
   const nodes = [];
+  const links = [];
 
   // Create nodes for each word in each time slice
   for (const [word, frequencies] of Object.entries(wordData)) {
@@ -110,7 +82,6 @@ export function generateSampleData() {
           layerLabel: timeSlices[t].label,
           weight: freq,
           color: getLayerColor(t),
-          // Metadata for inspection
           metadata: {
             word,
             timeSlice: timeSlices[t].label,
@@ -120,28 +91,34 @@ export function generateSampleData() {
         });
       }
     }
+
+    // Connect the same word across adjacent time slices
+    for (let t = 0; t < timeSlices.length - 1; t++) {
+      const freq1 = frequencies[t];
+      const freq2 = frequencies[t + 1];
+      if (freq1 > 0 && freq2 > 0) {
+        links.push({
+          source: `${word}_${t}`,
+          target: `${word}_${t + 1}`,
+          value: 1,
+        });
+      }
+    }
   }
 
   return {
     nodes,
-    links: generateRandomLinks(nodes),
+    links,
     layers: timeSlices,
   };
 }
 
 /**
  * Parse user-provided JSON data into the graph format.
- * Expected format:
- * {
- *   "nodes": [{ "id": "...", "label": "...", "layer": 0, "weight": 50, ... }],
- *   "links": [{ "source": "node1", "target": "node2", "value": 10 }],
- *   "layers": [{ "label": "Layer 0", "index": 0 }, ...]
- * }
  */
 export function parseGraphData(jsonData) {
-  const { nodes, links, layers } = jsonData;
+  const { nodes, links = [], layers } = jsonData;
 
-  // Validate and assign colors if missing
   const processedNodes = nodes.map((node) => ({
     ...node,
     color: node.color || getLayerColor(node.layer || 0),
@@ -150,7 +127,7 @@ export function parseGraphData(jsonData) {
     metadata: node.metadata || {},
   }));
 
-  const processedLinks = links.map((link) => ({
+  const processedLinks = (links || []).map((link) => ({
     ...link,
     value: link.value || 1,
   }));
@@ -164,8 +141,6 @@ export function parseGraphData(jsonData) {
 
 /**
  * Fetch graph data from an API endpoint.
- * @param {string} url - The API endpoint URL
- * @returns {Promise<{ nodes: Array, links: Array, layers: Array }>}
  */
 export async function fetchGraphData(url) {
   const response = await fetch(url);
