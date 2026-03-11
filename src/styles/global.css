@@ -363,32 +363,6 @@ select:hover {
   border-color: var(--accent-blue);
 }
 
-/* ---- Status Bar ---- */
-.status-bar {
-  position: absolute;
-  bottom: 16px;
-  left: 16px;
-  display: flex;
-  gap: 16px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--text-muted);
-  background: var(--bg-panel);
-  padding: 8px 14px;
-  border-radius: var(--radius);
-  border: 1px solid var(--border-subtle);
-  z-index: 5;
-}
-
-.status-bar .stat {
-  display: flex;
-  gap: 6px;
-}
-
-.status-bar .stat-value {
-  color: var(--accent-emerald);
-}
-
 /* ---- Layer Legend ---- */
 .layer-legend {
   display: flex;

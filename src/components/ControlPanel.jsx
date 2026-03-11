@@ -121,7 +121,7 @@ export default function ControlPanel({
                   checked={config.showLinks}
                   onChange={(e) => updateConfig('showLinks', e.target.checked)}
                 />
-                <span>Show Bonds</span>
+                <span>Show Links</span>
               </label>
             </div>
             <div className="toggle-control">
@@ -132,16 +132,6 @@ export default function ControlPanel({
                   onChange={(e) => updateConfig('showLayerPlanes', e.target.checked)}
                 />
                 <span>Show Layers</span>
-              </label>
-            </div>
-            <div className="toggle-control">
-              <label>
-                <input
-                  type="checkbox"
-                  checked={config.showForceField}
-                  onChange={(e) => updateConfig('showForceField', e.target.checked)}
-                />
-                <span>Show Force Field</span>
               </label>
             </div>
           </div>

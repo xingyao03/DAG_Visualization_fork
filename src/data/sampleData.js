@@ -37,15 +37,13 @@ export function generateSampleData() {
   ];
 
   // Words with their frequencies per time slice.
-  // Values are intentionally spread across a wide range to create a clear
-  // word-cloud effect: dominant words (100-170) vs niche words (5-30).
   const wordData = {
     // Dominant throughout
     'AI':           [120, 140, 158, 155, 170],
     'data':         [110, 105, 108, 100,  95],
     'model':        [ 90,  95, 108, 115, 120],
 
-    // Rising stars — small early, huge by May
+    // Rising stars
     'agent':        [  8,  22,  50,  95, 145],
     'transformer':  [ 30,  52,  80, 108, 125],
     'safety':       [ 12,  28,  58,  85, 110],
@@ -84,7 +82,6 @@ export function generateSampleData() {
           layerLabel: timeSlices[t].label,
           weight: freq,
           color: getLayerColor(t),
-          // Metadata for inspection
           metadata: {
             word,
             timeSlice: timeSlices[t].label,
@@ -94,19 +91,71 @@ export function generateSampleData() {
         });
       }
     }
+
   }
 
-  // Create edges connecting the same word across adjacent time slices
-  for (const [word, frequencies] of Object.entries(wordData)) {
-    for (let t = 0; t < timeSlices.length - 1; t++) {
-      const currentFreq = frequencies[t];
-      const nextFreq = frequencies[t + 1];
-      if (currentFreq > 0 && nextFreq > 0) {
+  // ── Randomized spring connections across ANY forward layers ──
+  // Connections can skip layers. Rest length scales with layer gap so
+  // distant links are more relaxed, producing visible long-range threads.
+  const BASE_REST_LENGTH = 15;
+
+  // Group node ids by layer
+  const idsByLayer = {};
+  for (const node of nodes) {
+    if (!idsByLayer[node.layer]) idsByLayer[node.layer] = [];
+    idsByLayer[node.layer].push(node.id);
+  }
+  const layerIndices = Object.keys(idsByLayer).map(Number).sort((a, b) => a - b);
+
+  // Fisher-Yates shuffle on a copy
+  function shuffled(arr) {
+    const a = arr.slice();
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  }
+
+  for (let li = 0; li < layerIndices.length - 1; li++) {
+    const currIds = idsByLayer[layerIndices[li]];
+
+    // Collect ALL forward layers as potential targets
+    const forwardLayers = layerIndices.slice(li + 1);
+
+    for (const srcId of currIds) {
+      // 35% chance this node has zero forward connections (scattered outlier)
+      if (Math.random() < 0.35) continue;
+
+      // Pick 1–2 connections total, spread across any forward layer
+      const numConns = 1 + Math.floor(Math.random() * 2);
+
+      for (let c = 0; c < numConns; c++) {
+        // Pick a random forward layer (weighted toward closer layers)
+        // Use exponential decay: closer layers are more likely
+        const weights = forwardLayers.map((_, idx) => Math.exp(-0.7 * idx));
+        const totalWeight = weights.reduce((s, w) => s + w, 0);
+        let roll = Math.random() * totalWeight;
+        let chosenLayerIdx = 0;
+        for (let w = 0; w < weights.length; w++) {
+          roll -= weights[w];
+          if (roll <= 0) { chosenLayerIdx = w; break; }
+        }
+        const targetLayer = forwardLayers[chosenLayerIdx];
+        const targetIds = idsByLayer[targetLayer];
+
+        // Pick a random target node in that layer
+        const tgtId = shuffled(targetIds)[0];
+
+        // Layer gap determines rest length: farther layers → longer rest
+        const layerGap = targetLayer - layerIndices[li];
+
         links.push({
-          source: `${word}_${t}`,
-          target: `${word}_${t + 1}`,
-          // Edge weight based on average frequency
-          value: (currentFreq + nextFreq) / 2,
+          source: srcId,
+          target: tgtId,
+          value: 0.3 + Math.random() * 0.7,
+          // Per-link rest length scales with layer distance
+          restLength: BASE_REST_LENGTH * layerGap,
         });
       }
     }
@@ -121,17 +170,10 @@ export function generateSampleData() {
 
 /**
  * Parse user-provided JSON data into the graph format.
- * Expected format:
- * {
- *   "nodes": [{ "id": "...", "label": "...", "layer": 0, "weight": 50, ... }],
- *   "links": [{ "source": "node1", "target": "node2", "value": 10 }],
- *   "layers": [{ "label": "Layer 0", "index": 0 }, ...]
- * }
  */
 export function parseGraphData(jsonData) {
-  const { nodes, links, layers } = jsonData;
+  const { nodes, links = [], layers } = jsonData;
 
-  // Validate and assign colors if missing
   const processedNodes = nodes.map((node) => ({
     ...node,
     color: node.color || getLayerColor(node.layer || 0),
@@ -140,7 +182,7 @@ export function parseGraphData(jsonData) {
     metadata: node.metadata || {},
   }));
 
-  const processedLinks = links.map((link) => ({
+  const processedLinks = (links || []).map((link) => ({
     ...link,
     value: link.value || 1,
   }));
@@ -154,8 +196,6 @@ export function parseGraphData(jsonData) {
 
 /**
  * Fetch graph data from an API endpoint.
- * @param {string} url - The API endpoint URL
- * @returns {Promise<{ nodes: Array, links: Array, layers: Array }>}
  */
 export async function fetchGraphData(url) {
   const response = await fetch(url);
