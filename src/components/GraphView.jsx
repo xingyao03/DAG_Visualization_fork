@@ -68,7 +68,7 @@ export default function GraphView({
   useEffect(() => {
     if (!containerRef.current) return;
 
-    const layerSpacing = 200;
+    
     const graph = ForceGraph3D()(containerRef.current)
       .backgroundColor('#0a0e17')
       .showNavInfo(false)
@@ -76,8 +76,9 @@ export default function GraphView({
       .nodeThreeObjectExtend(false)
       .nodeThreeObject((node) => {
         const cfg = configRef.current;
+        const isSelected = selectedNode && selectedNode.id === node.id;
         const group = createHologramNode(node);
-
+      
         const s = 0.5 + (node.weight || 10) / 50;
         const outerRadius = 8.5 * s;
 
@@ -109,7 +110,7 @@ export default function GraphView({
         }
       
         if (isSelected) {
-          const ringGeometry = new THREE.SphereGeometry(approxRadius * 1.35, 24, 24);
+          const ringGeometry = new THREE.SphereGeometry(outerRadius * 1.35, 24, 24);
           const ringMaterial = new THREE.MeshBasicMaterial({
             color: '#ffffff',
             transparent: true,
@@ -177,7 +178,7 @@ export default function GraphView({
 
     // ── Custom Force 2: Cross-layer springs ──
     const spring = forceCrossLayerSpring(
-      graphData.links,
+      filteredGraphData.links,
       config.springStrength,
       config.springRestLength
     );
@@ -189,13 +190,13 @@ export default function GraphView({
 
     // ── Build layer groupings ──
     const nodesByLayer = {};
-    for (const node of graphData.nodes) {
-      if (!nodesByLayer[node.layer]) nodesByLayer[node.layer] = [];
+    for (const node of filteredGraphData.nodes) {
+      if (!(node.layer in nodesByLayer)) nodesByLayer[node.layer] = [];
       nodesByLayer[node.layer].push(node);
     }
 
     // ── Position nodes: random x/y (FREE), z strictly locked to layer ──
-    for (const node of graphData.nodes) {
+    for (const node of filteredGraphData.nodes) {
       const exactZ = (node.layer !== undefined ? node.layer : 0) * layerSpacing;
 
       // Z is STRICTLY pinned to layer plane — no displacement
@@ -216,10 +217,10 @@ export default function GraphView({
     // graph yet (which would mutate link.source/target to objects), so we
     // resolve manually from our own node array.
     const nodeById = new Map();
-    for (const node of graphData.nodes) nodeById.set(node.id, node);
+    for (const node of filteredGraphData.nodes) nodeById.set(node.id, node);
 
     const linkPairs = []; // flat array: [srcNode, tgtNode, srcNode, tgtNode, …]
-    for (const link of graphData.links) {
+    for (const link of filteredGraphData.links) {
       const src = typeof link.source === 'object' ? link.source : nodeById.get(link.source);
       const tgt = typeof link.target === 'object' ? link.target : nodeById.get(link.target);
       if (src && tgt) {
@@ -229,12 +230,12 @@ export default function GraphView({
     const totalSegments = linkPairs.length / 2;
 
     // ── Feed data to the graph (simulation begins) ──
-    graph.graphData(graphData);
+    graph.graphData(filteredGraphData);
 
     // ── Add flat layer plane meshes ──
     const layerPlanesGroup = new THREE.Group();
     const layerMeta = [];
-    const uniqueLayers = [...new Set(graphData.nodes.map(n => n.layer))].sort((a, b) => a - b);
+    const uniqueLayers = [...new Set(filteredGraphData.nodes.map((n) => n.layer))].sort((a, b) => a - b);
     for (const layerIdx of uniqueLayers) {
       const geometry = new THREE.PlaneGeometry(400, 400);
       const material = new THREE.MeshBasicMaterial({
@@ -285,7 +286,7 @@ export default function GraphView({
       // HARD Z-LOCK: force every node back to its exact layer z every tick.
       // This is belt-and-suspenders on top of fz — it catches any floating
       // point drift or vz leakage from the d3-force integration step.
-      for (const node of graphData.nodes) {
+      for (const node of filteredGraphData.nodes) {
         if (node._layerZ !== undefined) {
           node.z = node._layerZ;
           node.vz = 0;
