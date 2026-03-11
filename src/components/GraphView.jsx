@@ -321,8 +321,7 @@ export default function GraphView({
       }
       graph._destructor && graph._destructor();
     };
-  }, [filteredGraphData, config.repulsionStrength, config.repulsionMaxDistance, config.showLayerPlanes, config.showLinks, onNodeSelect]);
-
+  }, [filteredGraphData, onNodeSelect]);
   // ── Update forces when config changes (without re-creating the graph) ──
   useEffect(() => {
     configRef.current = config;
